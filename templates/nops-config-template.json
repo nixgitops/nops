@@ -1,0 +1,14 @@
+{
+  "git_user": "myuser",
+  "git_token": "pat-XXXXXXX",
+  "repo_url": "https://git.example.com/myuser/fleet.git",
+  "node_group": "web",
+  "node_admin": "myadmin",
+  "node_admin_pass": "supersecret",
+  "trigger_choice": "1",
+  "matrix_bot_token": "syt_XXXX",
+  "matrix_room_id": "!room:example.com",
+  "matrix_homeserver": "matrix.example.com",
+  "webhook_secret": "mywebhooksecret",
+  "fleet_private_key": ""
+}
