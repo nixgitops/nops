@@ -8,7 +8,7 @@
     sops-nix.inputs.nixpkgs.follows = "nixpkgs";
     
     # nops flake input — provides nixosModules.default (the service module) and the nops-install CLI.
-    nops.url = "git+https://forgejo.mosstek.co/moss/nops.git";
+    nops.url = "git+https://github.com/nixgitops/nops.git";
     nops.inputs.nixpkgs.follows = "nixpkgs";
     nops.inputs.sops-nix.follows = "sops-nix";
   };

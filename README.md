@@ -37,7 +37,7 @@ Create a new **empty private repository** (e.g., `fleet`) on your Forgejo server
 Run the following command on the target NixOS node to begin fleet enrollment. The installer will automatically bootstrap the required service users, generate Age keys, and build the initial system.
 
 ```bash
-sudo nix run git+[https://forgejo.mosstek.co/moss/nops.git#install](https://forgejo.mosstek.co/moss/nops.git#install) --refresh
+sudo nix run git+https://github.com/nixgitops/nops.git#install --refresh
 ```
 services.nops = {
   enable = true;
