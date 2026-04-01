@@ -20,6 +20,7 @@ Config file mode:
   --config PATH            Read enrollment values from a JSON file.
 
 Direct flag mode:
+    --hostname NAME          Node hostname to write into the generated config.
   --repo-url URL           Fleet repository URL (HTTPS).
   --git-user USER          Git username for clone/push operations.
   --git-token TOKEN        Git token or password for clone/push operations.
@@ -44,7 +45,7 @@ Optional:
 Notes:
   - If both --config and direct flags are provided, direct flags take precedence.
   - If neither --config nor direct flags are provided, the installer prompts interactively.
-  - Hostname is taken from the current system hostname.
+    - If --hostname is omitted, the installer uses the current system hostname.
 EOF
 }
 
@@ -109,6 +110,8 @@ NON_INTERACTIVE=false
 CLEAN=false
 DIRECT_INPUT=false
 
+HOSTNAME_OVERRIDE=""
+
 GIT_USER=""
 GIT_TOKEN=""
 REPO_URL=""
@@ -168,6 +171,11 @@ while [[ "$#" -gt 0 ]]; do
         --git-user)
             require_value "$1" "${2:-}"
             ARG_GIT_USER="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --hostname)
+            require_value "$1" "${2:-}"
+            HOSTNAME_OVERRIDE="$2"
             DIRECT_INPUT=true
             shift 2 ;;
         --git-token)
@@ -287,6 +295,8 @@ if [ -n "$CONFIG_FILE" ]; then
     fi
     NON_INTERACTIVE=true
 fi
+
+[ -n "$HOSTNAME_OVERRIDE" ] && HOSTNAME="$HOSTNAME_OVERRIDE"
 
 LOG_FILE="/home/nops/log/main.log"
 

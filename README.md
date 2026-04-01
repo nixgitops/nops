@@ -49,9 +49,8 @@ sudo nix run git+https://github.com/nixgitops/nops.git#install -- --config confi
 Direct flag mode is also supported:
 
 ```bash
-sudo hostnamectl set-hostname PBX-Asterisk-001
-
 sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
+  --hostname PBX-Asterisk-001 \
   --repo-url https://git.example.com/org/fleet.git \
   --git-user myuser \
   --git-token mytoken \
@@ -78,8 +77,14 @@ Direct-flag mode now supports the same common enrollment values typically carrie
 Typical post-install flow on a new node:
 
 ```bash
-sudo hostnamectl set-hostname PBX-Asterisk-001
-sudo nix run git+https://github.com/nixgitops/nops.git#install --refresh
+sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
+  --hostname PBX-Asterisk-001 \
+  --repo-url https://git.example.com/org/fleet.git \
+  --git-user myuser \
+  --git-token mytoken \
+  --node-group asterisk \
+  --admin techpro \
+  --admin-pass changeme
 ```
 
 Example service configuration after enrollment:
