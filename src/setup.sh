@@ -139,6 +139,25 @@ append_nix_block() {
     rm -f "$temp_file"
 }
 
+derive_host_id() {
+    local source_id=""
+
+    if [ -f /etc/machine-id ]; then
+        source_id=$(tr -cd '0-9a-fA-F' < /etc/machine-id | tr 'A-F' 'a-f' | head -c 8)
+    fi
+
+    if [ -z "$source_id" ]; then
+        source_id=$(printf '%s' "$HOSTNAME" | md5sum | cut -c1-8)
+    fi
+
+    if [ "${#source_id}" -ne 8 ]; then
+        echo "Error: unable to derive an 8-character networking.hostId for $HOSTNAME" >&2
+        exit 1
+    fi
+
+    printf '%s' "$source_id"
+}
+
 CONFIG_FILE=""
 NON_INTERACTIVE=false
 CLEAN=false
@@ -168,6 +187,7 @@ STATIC_GATEWAY=""
 STATIC_PREFIX_LENGTH=""
 STATIC_DNS=""
 STATIC_INTERFACE=""
+HOST_ID=""
 
 ARG_GIT_USER=""
 ARG_GIT_TOKEN=""
@@ -499,6 +519,7 @@ fi
 
 REPO_NAME=$(basename "$REPO_URL" .git)
 TARGET_DIR="/home/nops/$REPO_NAME"
+HOST_ID=$(derive_host_id)
 
 # Installs a shared fleet age key if provided, or generates a unique node key if none exists at /var/lib/sops-nix/key.txt.
 KEY_FILE="/var/lib/sops-nix/key.txt"
@@ -590,6 +611,7 @@ sudo -u nops sed -i "s|networking.hostName = \".*\";|networking.hostName = \"$HO
 sudo -u nops sed -i "s|users.users.tdavis|users.users.$NODE_ADMIN|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|initialPassword = \".*\";|initialPassword = \"$NODE_ADMIN_PASS\";|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|repoPath = \".*\";|repoPath = \"$TARGET_DIR\";|" "$NODE_DIR/configuration.nix"
+append_nix_block "$NODE_DIR/configuration.nix" "  networking.hostId = \"${HOST_ID}\";"
 
 if [ -n "$NODE_SSH_PUB_KEY" ]; then
         append_nix_block "$NODE_DIR/configuration.nix" "  users.users.${NODE_ADMIN}.openssh.authorizedKeys.keys = [
