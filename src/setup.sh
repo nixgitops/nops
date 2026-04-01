@@ -563,7 +563,12 @@ cd "$TARGET_DIR"
 # Ensures the standard fleet directory structure exists and bootstraps a base flake.nix if the repo is empty.
 log "Ensuring fleet root directory structure..."
 sudo -u nops mkdir -p modules secrets scripts groups nodes
-sudo -u nops touch modules/.keep secrets/.keep scripts/.keep groups/.keep nodes/.keep
+
+for placeholder in modules/.keep secrets/.keep scripts/.keep groups/.keep nodes/.keep; do
+    if [ -f "$TARGET_DIR/$placeholder" ]; then
+        sudo -u nops rm -f "$TARGET_DIR/$placeholder"
+    fi
+done
 
 if [ ! -f "flake.nix" ]; then
     log "Empty fleet repository detected. Initializing base flake..."
