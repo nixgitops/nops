@@ -565,8 +565,11 @@ log "Ensuring fleet root directory structure..."
 sudo -u nops mkdir -p modules secrets scripts groups nodes
 
 for placeholder in modules/.keep secrets/.keep scripts/.keep groups/.keep nodes/.keep; do
-    if [ -f "$TARGET_DIR/$placeholder" ]; then
-        sudo -u nops rm -f "$TARGET_DIR/$placeholder"
+    placeholder_path="$TARGET_DIR/$placeholder"
+    placeholder_dir=$(dirname "$placeholder_path")
+
+    if [ -f "$placeholder_path" ] && sudo -u nops find "$placeholder_dir" -mindepth 1 ! -name ".keep" -print -quit | grep -q .; then
+        sudo -u nops rm -f "$placeholder_path"
     fi
 done
 
