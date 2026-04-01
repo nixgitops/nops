@@ -46,6 +46,35 @@ For non-interactive enrollment:
 sudo nix run git+https://github.com/nixgitops/nops.git#install -- --config config.json
 ```
 
+Direct flag mode is also supported:
+
+```bash
+sudo hostnamectl set-hostname PBX-Asterisk-001
+
+sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
+  --repo-url https://git.example.com/org/fleet.git \
+  --git-user myuser \
+  --git-token mytoken \
+  --node-group asterisk \
+  --admin techpro \
+  --admin-pass changeme \
+  --ssh-key "ssh-ed25519 AAAA..." \
+  --trigger webhook \
+  --fleet-private-key AGE-SECRET-KEY-PLACEHOLDER \
+  --webhook-secret mywebhooksecret \
+  --static-ip 172.16.4.44 \
+  --static-interface eth0 \
+  --static-prefix-length 24 \
+  --static-gateway 172.16.4.254 \
+  --static-dns 1.1.1.1 \
+  --node-role worker \
+  --is-controller false
+```
+
+If both `--config` and direct flags are provided, direct flags override the config file values.
+
+Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, static networking, node role, and controller mode.
+
 Typical post-install flow on a new node:
 
 ```bash

@@ -10,17 +10,274 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+usage() {
+    cat <<'EOF'
+Usage:
+  setup.sh [--config config.json] [--clean]
+  setup.sh --repo-url URL --git-user USER --git-token TOKEN --node-group GROUP --admin USER --admin-pass PASS [OPTIONS]
+
+Config file mode:
+  --config PATH            Read enrollment values from a JSON file.
+
+Direct flag mode:
+  --repo-url URL           Fleet repository URL (HTTPS).
+  --git-user USER          Git username for clone/push operations.
+  --git-token TOKEN        Git token or password for clone/push operations.
+  --node-group GROUP       Group/tier for this node.
+  --group GROUP            Alias for --node-group.
+  --admin USER             Primary admin username to create on this node.
+  --node-admin USER        Alias for --admin.
+  --admin-pass PASS        Password for the node admin user.
+  --node-admin-pass PASS   Alias for --admin-pass.
+  --trigger MODE           Trigger mode: matrix or webhook.
+  --trigger-choice VALUE   Trigger mode: 1 or 2.
+  --fleet-private-key KEY  Shared Age private key for the fleet.
+  --matrix-bot-token TOK   Matrix bot token.
+  --matrix-room-id ROOM    Matrix room ID.
+  --matrix-homeserver HS   Matrix homeserver.
+  --webhook-secret SECRET  Shared webhook secret.
+
+Optional:
+  --clean                  Remove previous nops state before enrollment.
+  -h, --help               Show this help text.
+
+Notes:
+  - If both --config and direct flags are provided, direct flags take precedence.
+  - If neither --config nor direct flags are provided, the installer prompts interactively.
+  - Hostname is taken from the current system hostname.
+EOF
+}
+
+require_value() {
+    local option="$1"
+    local value="${2:-}"
+
+    [[ -n "$value" ]] || {
+        usage
+        echo "Error: missing value for $option" >&2
+        exit 1
+    }
+}
+
+normalize_trigger_choice() {
+    local value="$1"
+
+    case "$value" in
+        "") printf '%s' "" ;;
+        1|matrix|MATRIX|Matrix) printf '1' ;;
+        2|webhook|WEBHOOK|Webhook) printf '2' ;;
+        *)
+            usage
+            echo "Error: unsupported trigger choice '$value' (use matrix|webhook or 1|2)" >&2
+            exit 1 ;;
+    esac
+}
+
+normalize_bool() {
+    local value="$1"
+
+    case "$value" in
+        "") printf '%s' "" ;;
+        true|TRUE|True|1|yes|YES|on|ON) printf 'true' ;;
+        false|FALSE|False|0|no|NO|off|OFF) printf 'false' ;;
+        *)
+            usage
+            echo "Error: unsupported boolean value '$value' (use true|false)" >&2
+            exit 1 ;;
+    esac
+}
+
+format_dns_list() {
+    local raw="$1"
+    local -a dns_entries=()
+    local formatted=""
+
+    raw="${raw//,/ }"
+    # shellcheck disable=SC2206
+    dns_entries=($raw)
+
+    for dns in "${dns_entries[@]}"; do
+        [ -n "$dns" ] || continue
+        formatted="$formatted \"$dns\""
+    done
+
+    printf '%s' "${formatted# }"
+}
+
 CONFIG_FILE=""
 NON_INTERACTIVE=false
 CLEAN=false
+DIRECT_INPUT=false
+
+GIT_USER=""
+GIT_TOKEN=""
+REPO_URL=""
+NODE_GROUP=""
+NODE_ADMIN=""
+NODE_ADMIN_PASS=""
+TRIGGER_CHOICE=""
+FLEET_PRIVATE_KEY=""
+MATRIX_BOT_TOKEN=""
+MATRIX_ROOM_ID=""
+MATRIX_HOMESERVER=""
+WEBHOOK_SECRET=""
+
+BOOTSTRAP_MODE=""
+IS_CONTROLLER=""
+NODE_ROLE=""
+NODE_SSH_PUB_KEY=""
+STATIC_IP=""
+STATIC_GATEWAY=""
+STATIC_PREFIX_LENGTH=""
+STATIC_DNS=""
+STATIC_INTERFACE=""
+
+ARG_GIT_USER=""
+ARG_GIT_TOKEN=""
+ARG_REPO_URL=""
+ARG_NODE_GROUP=""
+ARG_NODE_ADMIN=""
+ARG_NODE_ADMIN_PASS=""
+ARG_TRIGGER_CHOICE=""
+ARG_FLEET_PRIVATE_KEY=""
+ARG_MATRIX_BOT_TOKEN=""
+ARG_MATRIX_ROOM_ID=""
+ARG_MATRIX_HOMESERVER=""
+ARG_WEBHOOK_SECRET=""
+
+ARG_BOOTSTRAP_MODE=""
+ARG_IS_CONTROLLER=""
+ARG_NODE_ROLE=""
+ARG_NODE_SSH_PUB_KEY=""
+ARG_STATIC_IP=""
+ARG_STATIC_GATEWAY=""
+ARG_STATIC_PREFIX_LENGTH=""
+ARG_STATIC_DNS=""
+ARG_STATIC_INTERFACE=""
 
 while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        --config) CONFIG_FILE="$2"; shift ;;
-        --clean) CLEAN=true ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+    case "$1" in
+        --config)
+            require_value "$1" "${2:-}"
+            CONFIG_FILE="$2"
+            NON_INTERACTIVE=true
+            shift 2 ;;
+        --clean)
+            CLEAN=true
+            shift ;;
+        --git-user)
+            require_value "$1" "${2:-}"
+            ARG_GIT_USER="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --git-token)
+            require_value "$1" "${2:-}"
+            ARG_GIT_TOKEN="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --repo-url)
+            require_value "$1" "${2:-}"
+            ARG_REPO_URL="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --node-group|--group)
+            require_value "$1" "${2:-}"
+            ARG_NODE_GROUP="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --node-admin|--admin)
+            require_value "$1" "${2:-}"
+            ARG_NODE_ADMIN="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --node-admin-pass|--admin-pass)
+            require_value "$1" "${2:-}"
+            ARG_NODE_ADMIN_PASS="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --trigger|--trigger-choice)
+            require_value "$1" "${2:-}"
+            ARG_TRIGGER_CHOICE="$(normalize_trigger_choice "$2")"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --fleet-private-key)
+            require_value "$1" "${2:-}"
+            ARG_FLEET_PRIVATE_KEY="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --matrix-bot-token)
+            require_value "$1" "${2:-}"
+            ARG_MATRIX_BOT_TOKEN="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --matrix-room-id)
+            require_value "$1" "${2:-}"
+            ARG_MATRIX_ROOM_ID="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --matrix-homeserver)
+            require_value "$1" "${2:-}"
+            ARG_MATRIX_HOMESERVER="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --webhook-secret)
+            require_value "$1" "${2:-}"
+            ARG_WEBHOOK_SECRET="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --bootstrap-mode)
+            require_value "$1" "${2:-}"
+            ARG_BOOTSTRAP_MODE="$(normalize_bool "$2")"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --is-controller)
+            require_value "$1" "${2:-}"
+            ARG_IS_CONTROLLER="$(normalize_bool "$2")"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --node-role)
+            require_value "$1" "${2:-}"
+            ARG_NODE_ROLE="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --node-ssh-pub-key|--ssh-key)
+            require_value "$1" "${2:-}"
+            ARG_NODE_SSH_PUB_KEY="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --static-ip)
+            require_value "$1" "${2:-}"
+            ARG_STATIC_IP="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --static-gateway|--gateway)
+            require_value "$1" "${2:-}"
+            ARG_STATIC_GATEWAY="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --static-prefix-length|--prefix-length)
+            require_value "$1" "${2:-}"
+            ARG_STATIC_PREFIX_LENGTH="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --static-dns|--dns)
+            require_value "$1" "${2:-}"
+            ARG_STATIC_DNS="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --static-interface|--interface)
+            require_value "$1" "${2:-}"
+            ARG_STATIC_INTERFACE="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        -h|--help)
+            usage
+            exit 0 ;;
+        *)
+            usage
+            echo "Unknown parameter passed: $1" >&2
+            exit 1 ;;
     esac
-    shift
 done
 
 if [ -n "$CONFIG_FILE" ]; then
@@ -69,7 +326,12 @@ fi
 sudo mkdir -p /home/nops
 sudo chown -R nops:nops /home/nops
 
-# Reads git credentials, repo URL, group, admin user, trigger mode, and secrets from a JSON config file or interactive prompts.
+command -v jq >/dev/null 2>&1 || {
+    echo "Error: jq is required for nops enrollment." >&2
+    exit 1
+}
+
+# Reads git credentials, repo URL, group, admin user, trigger mode, and secrets from a JSON config file, direct command-line flags, or interactive prompts.
 if [ "$NON_INTERACTIVE" = true ]; then
     log "Non-interactive mode enabled. Reading from $CONFIG_FILE..."
     GIT_USER=$(jq -r '.git_user // empty' "$CONFIG_FILE")
@@ -78,19 +340,96 @@ if [ "$NON_INTERACTIVE" = true ]; then
     NODE_GROUP=$(jq -r '.node_group // "default"' "$CONFIG_FILE")
     NODE_ADMIN=$(jq -r '.node_admin // empty' "$CONFIG_FILE")
     NODE_ADMIN_PASS=$(jq -r '.node_admin_pass // empty' "$CONFIG_FILE")
-    TRIGGER_CHOICE=$(jq -r '.trigger_choice // "1"' "$CONFIG_FILE")
+    TRIGGER_CHOICE=$(normalize_trigger_choice "$(jq -r '.trigger_choice // "1"' "$CONFIG_FILE")")
     FLEET_PRIVATE_KEY=$(jq -r '.fleet_private_key // empty' "$CONFIG_FILE")
     
     MATRIX_BOT_TOKEN=$(jq -r '.matrix_bot_token // ""' "$CONFIG_FILE")
     MATRIX_ROOM_ID=$(jq -r '.matrix_room_id // ""' "$CONFIG_FILE")
     MATRIX_HOMESERVER=$(jq -r '.matrix_homeserver // ""' "$CONFIG_FILE")
     WEBHOOK_SECRET=$(jq -r '.webhook_secret // ""' "$CONFIG_FILE")
+    BOOTSTRAP_MODE=$(normalize_bool "$(jq -r '.bootstrap_mode // empty' "$CONFIG_FILE")")
+    IS_CONTROLLER=$(normalize_bool "$(jq -r '.is_controller // empty' "$CONFIG_FILE")")
+    NODE_ROLE=$(jq -r '.node_role // "worker"' "$CONFIG_FILE")
+    NODE_SSH_PUB_KEY=$(jq -r '.node_ssh_pub_key // empty' "$CONFIG_FILE")
+    STATIC_IP=$(jq -r '.static_ip // empty' "$CONFIG_FILE")
+    STATIC_GATEWAY=$(jq -r '.static_gateway // empty' "$CONFIG_FILE")
+    STATIC_PREFIX_LENGTH=$(jq -r '.static_prefix_length // empty' "$CONFIG_FILE")
+    STATIC_DNS=$(jq -r '.static_dns // empty | if type == "array" then join(" ") else . end' "$CONFIG_FILE")
+    STATIC_INTERFACE=$(jq -r '.static_interface // empty' "$CONFIG_FILE")
 
     if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ] || [ -z "$REPO_URL" ] || [ -z "$NODE_ADMIN" ] || [ -z "$NODE_ADMIN_PASS" ]; then
         echo "Error: Missing required fields in config file."
         exit 1
     fi
-else
+fi
+
+if [ "$DIRECT_INPUT" = true ]; then
+    NON_INTERACTIVE=true
+    [ -n "$ARG_GIT_USER" ] && GIT_USER="$ARG_GIT_USER"
+    [ -n "$ARG_GIT_TOKEN" ] && GIT_TOKEN="$ARG_GIT_TOKEN"
+    [ -n "$ARG_REPO_URL" ] && REPO_URL="$ARG_REPO_URL"
+    [ -n "$ARG_NODE_GROUP" ] && NODE_GROUP="$ARG_NODE_GROUP"
+    [ -n "$ARG_NODE_ADMIN" ] && NODE_ADMIN="$ARG_NODE_ADMIN"
+    [ -n "$ARG_NODE_ADMIN_PASS" ] && NODE_ADMIN_PASS="$ARG_NODE_ADMIN_PASS"
+    [ -n "$ARG_TRIGGER_CHOICE" ] && TRIGGER_CHOICE="$ARG_TRIGGER_CHOICE"
+    [ -n "$ARG_FLEET_PRIVATE_KEY" ] && FLEET_PRIVATE_KEY="$ARG_FLEET_PRIVATE_KEY"
+    [ -n "$ARG_MATRIX_BOT_TOKEN" ] && MATRIX_BOT_TOKEN="$ARG_MATRIX_BOT_TOKEN"
+    [ -n "$ARG_MATRIX_ROOM_ID" ] && MATRIX_ROOM_ID="$ARG_MATRIX_ROOM_ID"
+    [ -n "$ARG_MATRIX_HOMESERVER" ] && MATRIX_HOMESERVER="$ARG_MATRIX_HOMESERVER"
+    [ -n "$ARG_WEBHOOK_SECRET" ] && WEBHOOK_SECRET="$ARG_WEBHOOK_SECRET"
+    [ -n "$ARG_BOOTSTRAP_MODE" ] && BOOTSTRAP_MODE="$ARG_BOOTSTRAP_MODE"
+    [ -n "$ARG_IS_CONTROLLER" ] && IS_CONTROLLER="$ARG_IS_CONTROLLER"
+    [ -n "$ARG_NODE_ROLE" ] && NODE_ROLE="$ARG_NODE_ROLE"
+    [ -n "$ARG_NODE_SSH_PUB_KEY" ] && NODE_SSH_PUB_KEY="$ARG_NODE_SSH_PUB_KEY"
+    [ -n "$ARG_STATIC_IP" ] && STATIC_IP="$ARG_STATIC_IP"
+    [ -n "$ARG_STATIC_GATEWAY" ] && STATIC_GATEWAY="$ARG_STATIC_GATEWAY"
+    [ -n "$ARG_STATIC_PREFIX_LENGTH" ] && STATIC_PREFIX_LENGTH="$ARG_STATIC_PREFIX_LENGTH"
+    [ -n "$ARG_STATIC_DNS" ] && STATIC_DNS="$ARG_STATIC_DNS"
+    [ -n "$ARG_STATIC_INTERFACE" ] && STATIC_INTERFACE="$ARG_STATIC_INTERFACE"
+
+    NODE_GROUP=${NODE_GROUP:-default}
+    TRIGGER_CHOICE=${TRIGGER_CHOICE:-1}
+    NODE_ROLE=${NODE_ROLE:-worker}
+    STATIC_PREFIX_LENGTH=${STATIC_PREFIX_LENGTH:-24}
+
+    if [ -n "$CONFIG_FILE" ]; then
+        log "Applying command-line flag overrides on top of $CONFIG_FILE..."
+    else
+        log "Non-interactive mode enabled. Reading from command-line flags..."
+    fi
+
+    if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ] || [ -z "$REPO_URL" ] || [ -z "$NODE_ADMIN" ] || [ -z "$NODE_ADMIN_PASS" ]; then
+        echo "Error: Missing required enrollment fields. Provide them via --config, direct flags, or interactive prompts."
+        exit 1
+    fi
+fi
+
+if [ "$NON_INTERACTIVE" != true ]; then
+    NODE_ROLE="worker"
+fi
+
+if [ -n "$NODE_ROLE" ] && [ -z "$IS_CONTROLLER" ]; then
+    if [ "$NODE_ROLE" = "controller" ]; then
+        IS_CONTROLLER="true"
+    else
+        IS_CONTROLLER="false"
+    fi
+fi
+
+if [ -n "$STATIC_IP" ] || [ -n "$STATIC_GATEWAY" ] || [ -n "$STATIC_PREFIX_LENGTH" ] || [ -n "$STATIC_DNS" ] || [ -n "$STATIC_INTERFACE" ]; then
+    [ -n "$STATIC_IP" ] || { echo "Error: --static-ip is required with static networking flags."; exit 1; }
+    [ -n "$STATIC_GATEWAY" ] || { echo "Error: --static-gateway is required with static networking flags."; exit 1; }
+    [ -n "$STATIC_PREFIX_LENGTH" ] || { echo "Error: --static-prefix-length is required with static networking flags."; exit 1; }
+    [ -n "$STATIC_DNS" ] || { echo "Error: --static-dns is required with static networking flags."; exit 1; }
+    [ -n "$STATIC_INTERFACE" ] || { echo "Error: --static-interface is required with static networking flags."; exit 1; }
+    STATIC_DNS="$(format_dns_list "$STATIC_DNS")"
+fi
+
+if [ -n "$BOOTSTRAP_MODE" ]; then
+    log "bootstrap_mode=$BOOTSTRAP_MODE requested. This flag is accepted for config parity but does not currently change installer behavior."
+fi
+
+if [ "$NON_INTERACTIVE" != true ]; then
     read -p "Enter Git Host Admin/Deploy Username: " GIT_USER
     read -s -p "Enter Git Access Token: " GIT_TOKEN
     echo ""
@@ -119,7 +458,7 @@ TARGET_DIR="/home/nops/$REPO_NAME"
 
 # Installs a shared fleet age key if provided, or generates a unique node key if none exists at /var/lib/sops-nix/key.txt.
 KEY_FILE="/var/lib/sops-nix/key.txt"
-sudo mkdir -p $(dirname $KEY_FILE)
+sudo mkdir -p "$(dirname "$KEY_FILE")"
 
 if [ -n "$FLEET_PRIVATE_KEY" ]; then
     log "FLEET_PRIVATE_KEY environment variable detected. Using shared fleet key..."
@@ -207,6 +546,33 @@ sudo -u nops sed -i "s|networking.hostName = \".*\";|networking.hostName = \"$HO
 sudo -u nops sed -i "s|users.users.tdavis|users.users.$NODE_ADMIN|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|initialPassword = \".*\";|initialPassword = \"$NODE_ADMIN_PASS\";|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|repoPath = \".*\";|repoPath = \"$TARGET_DIR\";|" "$NODE_DIR/configuration.nix"
+
+if [ -n "$NODE_SSH_PUB_KEY" ]; then
+        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
+
+    users.users.${NODE_ADMIN}.openssh.authorizedKeys.keys = [
+        "${NODE_SSH_PUB_KEY}"
+    ];
+EOF
+fi
+
+if [ -n "$STATIC_IP" ] && [ -n "$STATIC_GATEWAY" ] && [ -n "$STATIC_INTERFACE" ]; then
+        log "Configuring static IP: $STATIC_IP on $STATIC_INTERFACE..."
+        sudo -u nops sed -i "s|networking.networkmanager.enable = true;|networking.networkmanager.enable = false;|" "$NODE_DIR/configuration.nix"
+        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
+
+    networking.interfaces.${STATIC_INTERFACE}.ipv4.addresses = [{ address = "${STATIC_IP}"; prefixLength = ${STATIC_PREFIX_LENGTH}; }];
+    networking.defaultGateway = "${STATIC_GATEWAY}";
+    networking.nameservers = [ ${STATIC_DNS} ];
+EOF
+fi
+
+if [ -n "$IS_CONTROLLER" ]; then
+        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
+
+    services.nops.isController = ${IS_CONTROLLER};
+EOF
+fi
 
 if [ "$TRIGGER_CHOICE" == "2" ]; then
     sudo -u nops sed -i "s|MATRIX_ENABLE_PLACEHOLDER|false|" "$NODE_DIR/configuration.nix"
