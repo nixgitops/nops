@@ -105,6 +105,40 @@ format_dns_list() {
     printf '%s' "${formatted# }"
 }
 
+append_nix_block() {
+    local target_file="$1"
+    local nix_block="$2"
+
+    local temp_file
+    temp_file=$(mktemp)
+
+    awk -v block="$nix_block" '
+        { lines[NR] = $0 }
+        END {
+            if (NR == 0) {
+                exit 1
+            }
+
+            inserted = 0
+            for (i = 1; i <= NR; i++) {
+                if (i == NR && lines[i] == "}") {
+                    print ""
+                    print block
+                    inserted = 1
+                }
+                print lines[i]
+            }
+
+            if (!inserted) {
+                exit 2
+            }
+        }
+    ' "$target_file" > "$temp_file"
+
+    cat "$temp_file" > "$target_file"
+    rm -f "$temp_file"
+}
+
 CONFIG_FILE=""
 NON_INTERACTIVE=false
 CLEAN=false
@@ -558,30 +592,21 @@ sudo -u nops sed -i "s|initialPassword = \".*\";|initialPassword = \"$NODE_ADMIN
 sudo -u nops sed -i "s|repoPath = \".*\";|repoPath = \"$TARGET_DIR\";|" "$NODE_DIR/configuration.nix"
 
 if [ -n "$NODE_SSH_PUB_KEY" ]; then
-        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
-
-    users.users.${NODE_ADMIN}.openssh.authorizedKeys.keys = [
-        "${NODE_SSH_PUB_KEY}"
-    ];
-EOF
+        append_nix_block "$NODE_DIR/configuration.nix" "  users.users.${NODE_ADMIN}.openssh.authorizedKeys.keys = [
+    \"${NODE_SSH_PUB_KEY}\"
+  ];"
 fi
 
 if [ -n "$STATIC_IP" ] && [ -n "$STATIC_GATEWAY" ] && [ -n "$STATIC_INTERFACE" ]; then
         log "Configuring static IP: $STATIC_IP on $STATIC_INTERFACE..."
         sudo -u nops sed -i "s|networking.networkmanager.enable = true;|networking.networkmanager.enable = false;|" "$NODE_DIR/configuration.nix"
-        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
-
-    networking.interfaces.${STATIC_INTERFACE}.ipv4.addresses = [{ address = "${STATIC_IP}"; prefixLength = ${STATIC_PREFIX_LENGTH}; }];
-    networking.defaultGateway = "${STATIC_GATEWAY}";
-    networking.nameservers = [ ${STATIC_DNS} ];
-EOF
+        append_nix_block "$NODE_DIR/configuration.nix" "  networking.interfaces.${STATIC_INTERFACE}.ipv4.addresses = [{ address = \"${STATIC_IP}\"; prefixLength = ${STATIC_PREFIX_LENGTH}; }];
+  networking.defaultGateway = \"${STATIC_GATEWAY}\";
+  networking.nameservers = [ ${STATIC_DNS} ];"
 fi
 
 if [ -n "$IS_CONTROLLER" ]; then
-        cat <<EOF | sudo -u nops tee -a "$NODE_DIR/configuration.nix" > /dev/null
-
-    services.nops.isController = ${IS_CONTROLLER};
-EOF
+        append_nix_block "$NODE_DIR/configuration.nix" "  services.nops.isController = ${IS_CONTROLLER};"
 fi
 
 if [ "$TRIGGER_CHOICE" == "2" ]; then
