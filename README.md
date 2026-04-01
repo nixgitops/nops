@@ -39,17 +39,34 @@ Run the following command on the target NixOS node to begin fleet enrollment. Th
 ```bash
 sudo nix run git+https://github.com/nixgitops/nops.git#install --refresh
 ```
+
+For non-interactive enrollment:
+
+```bash
+sudo nix run git+https://github.com/nixgitops/nops.git#install -- --config config.json
+```
+
+Typical post-install flow on a new node:
+
+```bash
+sudo hostnamectl set-hostname PBX-Asterisk-001
+sudo nix run git+https://github.com/nixgitops/nops.git#install --refresh
+```
+
+Example service configuration after enrollment:
+
+```nix
 services.nops = {
   enable = true;
   repoPath = "/home/nops/fleet";
-  
+
   # To use Matrix triggers
   matrix.enable = true;
-  
+
   # To use Webhook triggers
   webhook.enable = true;
   webhook.port = 8080;
-  
+
   # Advanced: Designate this node as the Infrastructure Controller
   isController = true;
   controllerScript = ''
@@ -58,3 +75,4 @@ services.nops = {
     # Be sure to use [skip nops] in your automated commit messages.
   '';
 };
+```
