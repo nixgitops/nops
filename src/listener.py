@@ -4,6 +4,7 @@ import logging
 import socket
 from typing import Optional
 from nio import AsyncClient, RoomMessageText, RoomMessageNotice, SyncResponse, SyncError
+from metrics import record_trigger
 from update import UpdateManager
 
 CONFIG_PATH = os.environ.get("NOPS_CONFIG_PATH")
@@ -51,8 +52,9 @@ class NopsListener:
             
             if any(kw in body.lower() for kw in ["push", "commit", "update"]):
                 logger.info(f"UPDATE TRIGGER DETECTED FROM {sender}")
+                record_trigger("matrix")
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self.updater.perform_update, event.event_id)
+                await loop.run_in_executor(None, self.updater.perform_update, event.event_id, "matrix")
         except Exception as e:
             logger.error(f"FAILED TO PROCESS MESSAGE: {e}", exc_info=True)
 

@@ -9,15 +9,16 @@
   outputs = { self, nixpkgs, sops-nix, ... }: let
     system = "x86_64-linux";
     pkgs = nixpkgs.legacyPackages.${system};
+    version = "2.3.0";
     
-    pythonDeps = ps: with ps; [ matrix-nio pyyaml aiohttp ];
+    pythonDeps = ps: with ps; [ matrix-nio pyyaml aiohttp prometheus-client ];
     pythonEnv = pkgs.python3.withPackages pythonDeps;
   in {
     packages.${system} = {
       # Builds nops-daemon (Matrix listener) and nops-webhook (HTTP push listener) as wrapped Python executables.
       default = pkgs.stdenv.mkDerivation {
         pname = "nops";
-        version = "2.2.0";
+        inherit version;
         src = ./.;
         
         nativeBuildInputs = [ pkgs.makeWrapper pkgs.dos2unix ];
@@ -37,6 +38,10 @@
           makeWrapper ${pythonEnv}/bin/python3 $out/bin/nops-webhook \
             --add-flags "$out/lib/webhook.py" \
             --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.git pkgs.inetutils pkgs.nixos-rebuild pkgs.systemd pkgs.bash ]}
+
+          makeWrapper ${pythonEnv}/bin/python3 $out/bin/nops-metrics \
+            --add-flags "$out/lib/metrics_exporter.py" \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.bash ]}
         '';
       };
 
@@ -118,6 +123,28 @@
             description = "Enable the Matrix bot listener.";
           };
         };
+        metrics = {
+          enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Enable the Prometheus metrics exporter for nops.";
+          };
+          port = lib.mkOption {
+            type = lib.types.int;
+            default = 9102;
+            description = "Port for the nops Prometheus metrics exporter.";
+          };
+          listenAddress = lib.mkOption {
+            type = lib.types.str;
+            default = "0.0.0.0";
+            description = "Address for the nops Prometheus metrics exporter to bind to.";
+          };
+          path = lib.mkOption {
+            type = lib.types.str;
+            default = "/metrics";
+            description = "HTTP path served by the nops Prometheus metrics exporter.";
+          };
+        };
         webhook = {
           enable = lib.mkOption {
             type = lib.types.bool;
@@ -143,7 +170,9 @@
       };
 
       config = lib.mkIf cfg.enable {
-        networking.firewall.allowedTCPPorts = lib.optionals cfg.webhook.enable [ cfg.webhook.port ];
+        networking.firewall.allowedTCPPorts =
+          lib.optionals cfg.webhook.enable [ cfg.webhook.port ]
+          ++ lib.optionals cfg.metrics.enable [ cfg.metrics.port ];
 
         users.users.nops = {
           isNormalUser = true;
@@ -178,14 +207,21 @@
             Restart = "always";
             RestartSec = "10s";
             WorkingDirectory = cfg.repoPath;
+            RuntimeDirectory = "nops-prometheus";
+            RuntimeDirectoryMode = "0755";
           };
           
           environment = {
             NOPS_CONFIG_PATH = "${nopsConfig}";
             NOPS_LOG_PATH = "/home/nops/log/main.log";
+            NOPS_VERSION = version;
+            NOPS_METRICS_ADDRESS = cfg.metrics.listenAddress;
+            NOPS_METRICS_PATH = cfg.metrics.path;
+            NOPS_METRICS_PORT = builtins.toString cfg.metrics.port;
             MATRIX_BOT_TOKEN_FILE = config.sops.secrets.matrix_bot_token.path;
             MATRIX_ROOM_ID_FILE = config.sops.secrets.matrix_room_id.path;
             MATRIX_HOMESERVER_FILE = config.sops.secrets.matrix_homeserver.path;
+            PROMETHEUS_MULTIPROC_DIR = "/run/nops-prometheus";
             WEBHOOK_PORT = builtins.toString cfg.webhook.port;
             WEBHOOK_SSL_CERT = if cfg.webhook.sslCert != null then cfg.webhook.sslCert else "";
             WEBHOOK_SSL_KEY = if cfg.webhook.sslKey != null then cfg.webhook.sslKey else "";
@@ -225,6 +261,11 @@
              if [ "${builtins.toString cfg.webhook.enable}" = "1" ];
              then
                ${self.packages.${system}.default}/bin/nops-webhook &
+             fi
+
+             if [ "${builtins.toString cfg.metrics.enable}" = "1" ];
+             then
+               ${self.packages.${system}.default}/bin/nops-metrics &
              fi
              
              wait -n

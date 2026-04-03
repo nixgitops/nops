@@ -2,7 +2,10 @@ import os
 import subprocess
 import logging
 import json
+import time
 from typing import List, Dict, Any
+
+from metrics import record_boot_sync, record_update_result
 
 logger = logging.getLogger("nops-update")
 
@@ -81,11 +84,12 @@ class UpdateManager:
     # Executes the update pipeline.
     # Fetches the remote repository to evaluate changes before running controller logic to avoid masking triggering commits.
     # Forces a rebuild if the node acts as a controller, otherwise evaluates changes for follower nodes.
-    def perform_update(self, trigger_id: str) -> str:
+    def perform_update(self, trigger_id: str, source: str = "unknown") -> str:
         logger.info(f"NOPS UPDATE SEQUENCE INITIATED: {trigger_id}")
         repo_dir = self.config['directories']['repo']
         is_controller = self.config.get('is_controller', False)
         controller_script = self.config.get('controller_script', "")
+        started_at = time.monotonic()
 
         try:
             self._run_command(["git", "fetch", "origin"], cwd=repo_dir, stage="GIT-FETCH")
@@ -124,6 +128,7 @@ class UpdateManager:
             if not needs_rebuild:
                 self._run_command(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, stage="GIT-RESET")
                 logger.info("NO RELEVANT CHANGES FOUND. RESETTING REPO.")
+                record_update_result(source, "skipped", time.monotonic() - started_at)
                 return "SKIPPED"
 
             self._run_command(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, stage="GIT-RESET")
@@ -137,10 +142,12 @@ class UpdateManager:
                 output_log = self._run_command(["bash", "-c", rebuild_cmds], cwd=repo_dir, stage="REBUILD")
             
             logger.info(f"NOPS REBUILD TASK COMPLETED: {trigger_id}")
+            record_update_result(source, "success", time.monotonic() - started_at)
             return output_log.strip()
 
         except Exception as e:
             logger.error(f"NOPS UPDATE PIPELINE FAILED: {str(e)}")
+            record_update_result(source, "failure", time.monotonic() - started_at)
             return f"FAILURE: {str(e)}"
 
     # Fetches origin and hard-resets to origin/main so the daemon starts with current fleet state.
@@ -150,5 +157,7 @@ class UpdateManager:
         try:
             self._run_command(["git", "fetch", "origin"], cwd=repo_dir, stage="BOOT")
             self._run_command(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, stage="BOOT")
+            record_boot_sync("success")
         except Exception as e:
             logger.error(f"BOOT SYNC FAILED: {e}")
+            record_boot_sync("failure")

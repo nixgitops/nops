@@ -3,6 +3,7 @@ import asyncio
 import logging
 import ssl
 from aiohttp import web
+from metrics import record_trigger, record_webhook_request
 from update import UpdateManager
 
 CONFIG_PATH = os.environ.get("NOPS_CONFIG_PATH")
@@ -25,6 +26,7 @@ updater = UpdateManager(CONFIG_PATH)
 # Accepts POST from Forgejo/GitLab/GitHub. Uses after commit hash as trigger ID; skips if "[skip nops]" is in the first commit message.
 async def handle_webhook(request):
     logger.info("WEBHOOK PUSH EVENT DETECTED")
+    record_trigger("webhook")
 
     try:
         payload = await request.json()
@@ -34,13 +36,15 @@ async def handle_webhook(request):
             commit_msg = payload['commits'][0].get('message', '')
             if '[skip nops]' in commit_msg:
                 logger.info("DETECTED '[skip nops]' IN COMMIT. IGNORING WEBHOOK.")
+                record_webhook_request("skipped")
                 return web.Response(text="Ignored due to skip flag.\n", status=200)
                 
     except Exception:
         trigger_id = "webhook-push"
         
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, updater.perform_update, trigger_id)
+    await loop.run_in_executor(None, updater.perform_update, trigger_id, "webhook")
+    record_webhook_request("accepted")
     
     return web.Response(text="Nops Update Triggered successfully.\n")
 
