@@ -15,7 +15,7 @@
     webhook.port = 8080;
     
     afterPush = [
-      "/run/wrappers/bin/sudo /run/current-system/sw/bin/systemd-run --working-directory=${config.services.nops.repoPath} --service-type=oneshot --setenv=PATH=/run/current-system/sw/bin:/run/wrappers/bin -- /run/current-system/sw/bin/nixos-rebuild switch --flake ${config.services.nops.repoPath}#${config.networking.hostName} --impure"
+      "/run/wrappers/bin/sudo /run/current-system/sw/bin/systemd-run --no-block --working-directory=${config.services.nops.repoPath} --service-type=oneshot --setenv=PATH=/run/current-system/sw/bin:/run/wrappers/bin -- /run/current-system/sw/bin/nixos-rebuild switch --flake ${config.services.nops.repoPath}#${config.networking.hostName} --impure"
     ];
   };
   
