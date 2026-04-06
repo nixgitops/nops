@@ -28,7 +28,7 @@ Direct flag mode:
   --group GROUP            Alias for --node-group.
   --admin USER             Primary admin username to create on this node.
   --node-admin USER        Alias for --admin.
-  --admin-pass PASS        Password for the node admin user.
+    --admin-pass PASS        Password for the node admin user; stored as a hashed SOPS secret.
   --node-admin-pass PASS   Alias for --admin-pass.
   --trigger MODE           Trigger mode: matrix or webhook.
   --trigger-choice VALUE   Trigger mode: 1 or 2.
@@ -103,6 +103,78 @@ format_dns_list() {
     done
 
     printf '%s' "${formatted# }"
+}
+
+hash_password() {
+    local plaintext_password="$1"
+    local -a openssl_cmd=()
+
+    if command -v openssl >/dev/null 2>&1; then
+        openssl_cmd=(openssl)
+    elif command -v nix >/dev/null 2>&1; then
+        openssl_cmd=(nix shell nixpkgs#openssl -c openssl)
+    else
+        echo "Error: openssl is required to hash the node admin password." >&2
+        exit 1
+    fi
+
+    printf '%s' "$plaintext_password" | "${openssl_cmd[@]}" passwd -6 -stdin
+}
+
+upsert_yaml_string_key() {
+    local target_file="$1"
+    local yaml_key="$2"
+    local raw_value="$3"
+
+    local rendered_value
+    local temp_file
+
+    rendered_value=$(jq -Rn --arg value "$raw_value" '$value')
+    temp_file=$(mktemp)
+
+    awk -v key="$yaml_key" -v value="$rendered_value" '
+        BEGIN { updated = 0 }
+        index($0, key ":") == 1 {
+            print key ": " value
+            updated = 1
+            next
+        }
+        { print }
+        END {
+            if (!updated) {
+                print key ": " value
+            }
+        }
+    ' "$target_file" > "$temp_file"
+
+    cat "$temp_file" > "$target_file"
+    rm -f "$temp_file"
+}
+
+upsert_sops_string_secret() {
+    local secret_file="$1"
+    local sops_config="$2"
+    local yaml_key="$3"
+    local raw_value="$4"
+
+    local temp_file
+    temp_file=$(mktemp)
+
+    if ! sudo -u nops sops --decrypt "$secret_file" | tee "$temp_file" > /dev/null; then
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    upsert_yaml_string_key "$temp_file" "$yaml_key" "$raw_value"
+    sudo chown nops:nops "$temp_file"
+
+    if ! sudo -u nops sops --config "$sops_config" --encrypt --in-place "$temp_file"; then
+        rm -f "$temp_file"
+        return 1
+    fi
+
+    sudo mv "$temp_file" "$secret_file"
+    sudo chown nops:nops "$secret_file"
 }
 
 append_nix_block() {
@@ -520,6 +592,9 @@ fi
 REPO_NAME=$(basename "$REPO_URL" .git)
 TARGET_DIR="/home/nops/$REPO_NAME"
 HOST_ID=$(derive_host_id)
+ADMIN_PASSWORD_SECRET_NAME="admin_password_hash_${HOSTNAME}"
+NODE_ADMIN_PASS_HASH=$(hash_password "$NODE_ADMIN_PASS")
+NODE_ADMIN_PASS=""
 
 # Installs a shared fleet age key if provided, or generates a unique node key if none exists at /var/lib/sops-nix/key.txt.
 KEY_FILE="/var/lib/sops-nix/key.txt"
@@ -617,7 +692,7 @@ fi
 log "Hydrating node configuration..."
 sudo -u nops sed -i "s|networking.hostName = \".*\";|networking.hostName = \"$HOSTNAME\";|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|users.users.tdavis|users.users.$NODE_ADMIN|" "$NODE_DIR/configuration.nix"
-sudo -u nops sed -i "s|initialPassword = \".*\";|initialPassword = \"$NODE_ADMIN_PASS\";|" "$NODE_DIR/configuration.nix"
+sudo -u nops sed -i "s|ADMIN_PASSWORD_HASH_SECRET_PLACEHOLDER|$ADMIN_PASSWORD_SECRET_NAME|g" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|repoPath = \".*\";|repoPath = \"$TARGET_DIR\";|" "$NODE_DIR/configuration.nix"
 append_nix_block "$NODE_DIR/configuration.nix" "  networking.hostId = \"${HOST_ID}\";"
 
@@ -692,11 +767,20 @@ if [ ! -f "$SECRETS_FILE" ]; then
         sudo -u nops vim "$SECRETS_FILE"
     fi
 
+    log "Storing persistent admin password hash in Fleet secrets..."
+    upsert_yaml_string_key "$SECRETS_FILE" "$ADMIN_PASSWORD_SECRET_NAME" "$NODE_ADMIN_PASS_HASH"
+
     sudo -u nops sops --config "$SOPS_CONFIG" --encrypt --in-place "$SECRETS_FILE"
 else
     log "Global secrets file exists. Attempting key update..."
     if ! sudo -u nops sops updatekeys -y "$SECRETS_FILE" 2>/dev/null; then
         warn "Manual authorization required on another node for this key."
+    fi
+
+    log "Storing persistent admin password hash in Fleet secrets..."
+    if ! upsert_sops_string_secret "$SECRETS_FILE" "$SOPS_CONFIG" "$ADMIN_PASSWORD_SECRET_NAME" "$NODE_ADMIN_PASS_HASH"; then
+        echo "Error: unable to store the admin password hash in $SECRETS_FILE. Ensure this node's age key is authorized, then retry enrollment." >&2
+        exit 1
     fi
 fi
 

@@ -35,11 +35,11 @@
     settings.PasswordAuthentication = true;
   };
 
-  # Primary admin user — username and initialPassword are substituted by the installer.
+  # Primary admin user — username and hashedPasswordFile secret are substituted by the installer.
   users.users.tdavis = {
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
-    initialPassword = "password"; 
+    hashedPasswordFile = config.sops.secrets."ADMIN_PASSWORD_HASH_SECRET_PLACEHOLDER".path;
   };
 
   security.sudo.extraRules = [
@@ -64,6 +64,7 @@
   sops.defaultSopsFile = ../../secrets/secrets.yaml;
   sops.age.keyFile = "/var/lib/sops-nix/key.txt";
   sops.secrets = {
+    "ADMIN_PASSWORD_HASH_SECRET_PLACEHOLDER" = { neededForUsers = true; };
     matrix_bot_token = { owner = "nops"; };
     matrix_room_id = { owner = "nops"; };
     matrix_homeserver = { owner = "nops"; };

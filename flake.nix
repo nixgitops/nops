@@ -72,6 +72,28 @@
             ]}
         '';
       };
+
+      migrate-passwords = pkgs.stdenv.mkDerivation {
+        name = "nops-migrate-passwords";
+        src = ./.;
+        nativeBuildInputs = [ pkgs.makeWrapper pkgs.dos2unix ];
+
+        postPatch = ''
+          dos2unix src/* templates/* flake.nix || true
+        '';
+
+        installPhase = ''
+          mkdir -p $out/share/nops/src $out/bin
+          cp src/migrate-legacy-passwords.sh $out/share/nops/src/migrate-legacy-passwords.sh
+          chmod +x $out/share/nops/src/migrate-legacy-passwords.sh
+
+          makeWrapper ${pkgs.bash}/bin/bash $out/bin/nops-migrate-passwords \
+            --add-flags "$out/share/nops/src/migrate-legacy-passwords.sh" \
+            --prefix PATH : ${pkgs.lib.makeBinPath [ 
+              pkgs.sops pkgs.age pkgs.jq pkgs.gawk pkgs.perl pkgs.openssl 
+            ]}
+        '';
+      };
     };
 
     # NixOS module imported by fleet nodes via flake input. Declares the nops service user, systemd daemon(s),
@@ -274,10 +296,17 @@
       };
     };
 
-    # Exposes nops-install as a runnable Nix app: `nix run .#install`.
-    apps.${system}.install = { 
-      type = "app"; 
-      program = "${self.packages.${system}.install}/bin/nops-install"; 
+    apps.${system} = {
+      # Exposes nops-install as a runnable Nix app: `nix run .#install`.
+      install = {
+        type = "app";
+        program = "${self.packages.${system}.install}/bin/nops-install";
+      };
+
+      migrate-passwords = {
+        type = "app";
+        program = "${self.packages.${system}.migrate-passwords}/bin/nops-migrate-passwords";
+      };
     };
   };
 }

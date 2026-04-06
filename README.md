@@ -74,6 +74,16 @@ If both `--config` and direct flags are provided, direct flags override the conf
 
 Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, static networking, node role, and controller mode.
 
+The installer hashes the value passed through `--admin-pass` or `node_admin_pass` and stores it in SOPS-backed Fleet secrets. Generated node configs use `users.users.<name>.hashedPasswordFile`, not `initialPassword`, so the admin password persists across rebuilds.
+
+Legacy nodes that were enrolled before this change continue to use whatever is already committed in their `nodes/<hostname>/configuration.nix`. To migrate an existing fleet repo in place, run:
+
+```bash
+nix run .#migrate-passwords -- --repo /path/to/fleet
+```
+
+That command converts legacy `initialPassword` entries to `hashedPasswordFile`, adds the required `sops.secrets` entries with `neededForUsers = true`, and writes per-node password hashes into `secrets/secrets.yaml`. It does not commit or push for you.
+
 Typical post-install flow on a new node:
 
 ```bash
