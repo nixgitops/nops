@@ -2,6 +2,8 @@
 
 **nops** is a lightweight, asynchronous GitOps deployment library for NixOS. It allows you to manage an entire "Fleet" of NixOS machines—and external infrastructure—from a single centralized Git repository. 
 
+`nops` is intended to stay separate from the fleet repository: the fleet consumes `nops` as an external flake/module dependency, while the fleet repo keeps its own private infrastructure code and secrets.
+
 `nops` gives you the flexibility to trigger asynchronous updates via two methods:
 1. **Matrix Pub/Sub:** Nodes connect to a secure Matrix room. When your Git host posts a push notification to the room, your nodes intelligently pull the changes. Zero open firewall ports required.
 2. **Webhooks:** Nodes run a lightweight `aiohttp` web server to receive standard JSON push event payloads directly from Forgejo, GitLab, or GitHub. 
