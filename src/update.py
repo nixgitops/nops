@@ -118,7 +118,6 @@ class UpdateManager:
 
             elif not is_controller:
                 logger.info("NODE IS FOLLOWER. PAUSING 30s FOR CONTROLLER TO PROVISION SECRETS...")
-                import time
                 time.sleep(30)
                 
                 self._run_command(["git", "fetch", "origin"], cwd=repo_dir, stage="GIT-FETCH-POST")
