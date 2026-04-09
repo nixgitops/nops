@@ -68,13 +68,17 @@ sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
   --static-prefix-length 24 \
   --static-gateway 192.0.2.1 \
   --static-dns 1.1.1.1 9.9.9.9 \
+  --private-ip 10.0.0.10 \
+  --private-interface eth1 \
+  --private-prefix-length 24 \
+  --private-gateway 10.0.0.1 \
   --node-role worker \
   --is-controller false
 ```
 
 If both `--config` and direct flags are provided, direct flags override the config file values.
 
-Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, static networking, node role, and controller mode.
+Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, single-interface static networking, and dual-homed public/private networking where the private interface can receive source-based policy routing through its own gateway.
 
 The installer hashes the value passed through `--admin-pass` or `node_admin_pass` and stores it in SOPS-backed Fleet secrets. Generated node configs use `users.users.<name>.hashedPasswordFile`, not `initialPassword`, so the admin password persists across rebuilds.
 

@@ -37,6 +37,15 @@ Direct flag mode:
   --matrix-room-id ROOM    Matrix room ID.
   --matrix-homeserver HS   Matrix homeserver.
   --webhook-secret SECRET  Shared webhook secret.
+    --static-ip ADDR         Primary static IPv4 address.
+    --static-gateway ADDR    Default gateway for the primary static interface.
+    --static-prefix-length N Prefix length for the primary static interface.
+    --static-dns IPS         Space- or comma-separated DNS servers for the primary static interface.
+    --static-interface IFACE Primary routed interface name.
+    --private-ip ADDR        Optional private static IPv4 address for a second interface.
+    --private-prefix-length N Prefix length for the private static interface.
+    --private-interface IFACE Private interface name for the second interface.
+    --private-gateway ADDR   Optional private gateway used for private-source policy routing.
 
 Optional:
   --clean                  Remove previous nops state before enrollment.
@@ -45,6 +54,8 @@ Optional:
 Notes:
   - If both --config and direct flags are provided, direct flags take precedence.
   - If neither --config nor direct flags are provided, the installer prompts interactively.
+    - Use --static-* for single-interface static nodes.
+    - Add --private-* to generate a second static interface and optional private-source policy routing.
     - If --hostname is omitted, the installer uses the current system hostname.
 EOF
 }
@@ -259,6 +270,10 @@ STATIC_GATEWAY=""
 STATIC_PREFIX_LENGTH=""
 STATIC_DNS=""
 STATIC_INTERFACE=""
+PRIVATE_IP=""
+PRIVATE_GATEWAY=""
+PRIVATE_PREFIX_LENGTH=""
+PRIVATE_INTERFACE=""
 HOST_ID=""
 
 ARG_GIT_USER=""
@@ -283,6 +298,10 @@ ARG_STATIC_GATEWAY=""
 ARG_STATIC_PREFIX_LENGTH=""
 ARG_STATIC_DNS=""
 ARG_STATIC_INTERFACE=""
+ARG_PRIVATE_IP=""
+ARG_PRIVATE_GATEWAY=""
+ARG_PRIVATE_PREFIX_LENGTH=""
+ARG_PRIVATE_INTERFACE=""
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -404,6 +423,26 @@ while [[ "$#" -gt 0 ]]; do
             ARG_STATIC_INTERFACE="$2"
             DIRECT_INPUT=true
             shift 2 ;;
+        --private-ip)
+            require_value "$1" "${2:-}"
+            ARG_PRIVATE_IP="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --private-gateway)
+            require_value "$1" "${2:-}"
+            ARG_PRIVATE_GATEWAY="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --private-prefix-length)
+            require_value "$1" "${2:-}"
+            ARG_PRIVATE_PREFIX_LENGTH="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
+        --private-interface)
+            require_value "$1" "${2:-}"
+            ARG_PRIVATE_INTERFACE="$2"
+            DIRECT_INPUT=true
+            shift 2 ;;
         -h|--help)
             usage
             exit 0 ;;
@@ -492,6 +531,10 @@ if [ "$NON_INTERACTIVE" = true ]; then
     STATIC_PREFIX_LENGTH=$(jq -r '.static_prefix_length // empty' "$CONFIG_FILE")
     STATIC_DNS=$(jq -r '.static_dns // empty | if type == "array" then join(" ") else . end' "$CONFIG_FILE")
     STATIC_INTERFACE=$(jq -r '.static_interface // empty' "$CONFIG_FILE")
+    PRIVATE_IP=$(jq -r '.private_ip // empty' "$CONFIG_FILE")
+    PRIVATE_GATEWAY=$(jq -r '.private_gateway // empty' "$CONFIG_FILE")
+    PRIVATE_PREFIX_LENGTH=$(jq -r '.private_prefix_length // empty' "$CONFIG_FILE")
+    PRIVATE_INTERFACE=$(jq -r '.private_interface // empty' "$CONFIG_FILE")
 
     if [ -z "$GIT_USER" ] || [ -z "$GIT_TOKEN" ] || [ -z "$REPO_URL" ] || [ -z "$NODE_ADMIN" ] || [ -z "$NODE_ADMIN_PASS" ]; then
         echo "Error: Missing required fields in config file."
@@ -522,6 +565,10 @@ if [ "$DIRECT_INPUT" = true ]; then
     [ -n "$ARG_STATIC_PREFIX_LENGTH" ] && STATIC_PREFIX_LENGTH="$ARG_STATIC_PREFIX_LENGTH"
     [ -n "$ARG_STATIC_DNS" ] && STATIC_DNS="$ARG_STATIC_DNS"
     [ -n "$ARG_STATIC_INTERFACE" ] && STATIC_INTERFACE="$ARG_STATIC_INTERFACE"
+    [ -n "$ARG_PRIVATE_IP" ] && PRIVATE_IP="$ARG_PRIVATE_IP"
+    [ -n "$ARG_PRIVATE_GATEWAY" ] && PRIVATE_GATEWAY="$ARG_PRIVATE_GATEWAY"
+    [ -n "$ARG_PRIVATE_PREFIX_LENGTH" ] && PRIVATE_PREFIX_LENGTH="$ARG_PRIVATE_PREFIX_LENGTH"
+    [ -n "$ARG_PRIVATE_INTERFACE" ] && PRIVATE_INTERFACE="$ARG_PRIVATE_INTERFACE"
 
     NODE_GROUP=${NODE_GROUP:-default}
     TRIGGER_CHOICE=${TRIGGER_CHOICE:-1}
@@ -559,6 +606,15 @@ if [ -n "$STATIC_IP" ] || [ -n "$STATIC_GATEWAY" ] || [ -n "$STATIC_PREFIX_LENGT
     [ -n "$STATIC_DNS" ] || { echo "Error: --static-dns is required with static networking flags."; exit 1; }
     [ -n "$STATIC_INTERFACE" ] || { echo "Error: --static-interface is required with static networking flags."; exit 1; }
     STATIC_DNS="$(format_dns_list "$STATIC_DNS")"
+fi
+
+if [ -n "$PRIVATE_IP" ] || [ -n "$PRIVATE_GATEWAY" ] || [ -n "$PRIVATE_PREFIX_LENGTH" ] || [ -n "$PRIVATE_INTERFACE" ]; then
+    [ -n "$STATIC_IP" ] || { echo "Error: --private-* requires a primary --static-* interface."; exit 1; }
+    [ -n "$PRIVATE_IP" ] || { echo "Error: --private-ip is required with private networking flags."; exit 1; }
+    [ -n "$PRIVATE_INTERFACE" ] || { echo "Error: --private-interface is required with private networking flags."; exit 1; }
+    PRIVATE_PREFIX_LENGTH=${PRIVATE_PREFIX_LENGTH:-24}
+    [ "$PRIVATE_INTERFACE" != "$STATIC_INTERFACE" ] || { echo "Error: --private-interface must differ from --static-interface."; exit 1; }
+    [ "$PRIVATE_IP" != "$STATIC_IP" ] || { echo "Error: --private-ip must differ from --static-ip."; exit 1; }
 fi
 
 if [ -n "$BOOTSTRAP_MODE" ]; then
@@ -703,11 +759,50 @@ if [ -n "$NODE_SSH_PUB_KEY" ]; then
 fi
 
 if [ -n "$STATIC_IP" ] && [ -n "$STATIC_GATEWAY" ] && [ -n "$STATIC_INTERFACE" ]; then
-        log "Configuring static IP: $STATIC_IP on $STATIC_INTERFACE..."
-        sudo -u nops sed -i "s|networking.networkmanager.enable = true;|networking.networkmanager.enable = false;|" "$NODE_DIR/configuration.nix"
-        append_nix_block "$NODE_DIR/configuration.nix" "  networking.interfaces.${STATIC_INTERFACE}.ipv4.addresses = [{ address = \"${STATIC_IP}\"; prefixLength = ${STATIC_PREFIX_LENGTH}; }];
-  networking.defaultGateway = \"${STATIC_GATEWAY}\";
-  networking.nameservers = [ ${STATIC_DNS} ];"
+                log "Configuring primary static interface ${STATIC_INTERFACE} with ${STATIC_IP}..."
+                sudo -u nops sed -i "s|networking.networkmanager.enable = true;|networking.networkmanager.enable = false;|" "$NODE_DIR/configuration.nix"
+                append_nix_block "$NODE_DIR/configuration.nix" "  networking.useDHCP = false;
+    networking.interfaces.${STATIC_INTERFACE} = {
+        useDHCP = false;
+        ipv4.addresses = [{ address = \"${STATIC_IP}\"; prefixLength = ${STATIC_PREFIX_LENGTH}; }];
+    };
+    networking.defaultGateway = \"${STATIC_GATEWAY}\";
+    networking.nameservers = [ ${STATIC_DNS} ];"
+fi
+
+if [ -n "$PRIVATE_IP" ] && [ -n "$PRIVATE_INTERFACE" ]; then
+                log "Configuring private static interface ${PRIVATE_INTERFACE} with ${PRIVATE_IP}..."
+                append_nix_block "$NODE_DIR/configuration.nix" "  networking.interfaces.${PRIVATE_INTERFACE} = {
+        useDHCP = false;
+        ipv4.addresses = [{ address = \"${PRIVATE_IP}\"; prefixLength = ${PRIVATE_PREFIX_LENGTH}; }];
+    };"
+
+                if [ -n "$PRIVATE_GATEWAY" ]; then
+                                append_nix_block "$NODE_DIR/configuration.nix" "  networking.iproute2.enable = true;
+
+    systemd.services.nops-private-policy-routing = {
+        description = \"Policy-based routing for ${PRIVATE_INTERFACE}\";
+        after = [ \"network-online.target\" ];
+        wants = [ \"network-online.target\" ];
+        wantedBy = [ \"multi-user.target\" ];
+        path = with pkgs; [ iproute2 gawk coreutils ];
+
+        serviceConfig = {
+            Type = \"oneshot\";
+            RemainAfterExit = true;
+        };
+
+        script = builtins.replaceStrings [ \"\\r\" ] [ \"\" ] ''
+            private_cidr=$(ip -o -f inet addr show dev ${PRIVATE_INTERFACE} | awk '{ print \$4 }' | head -n 1)
+            [ -n \"\$private_cidr\" ] || exit 1
+
+            ip route replace default via ${PRIVATE_GATEWAY} dev ${PRIVATE_INTERFACE} table 100
+            ip route replace \"\$private_cidr\" dev ${PRIVATE_INTERFACE} scope link table 100
+            ip rule del from ${PRIVATE_IP} table 100 2>/dev/null || true
+            ip rule add from ${PRIVATE_IP} table 100 priority 100
+        '';
+    };"
+                fi
 fi
 
 if [ -n "$IS_CONTROLLER" ]; then
