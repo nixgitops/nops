@@ -116,6 +116,10 @@ format_dns_list() {
     printf '%s' "${formatted# }"
 }
 
+escape_sed_replacement() {
+    printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
+}
+
 hash_password() {
     local plaintext_password="$1"
     local -a openssl_cmd=()
@@ -697,6 +701,13 @@ sudo -u nops mkdir -p modules secrets scripts groups nodes
 
 for placeholder in modules/.keep secrets/.keep scripts/.keep groups/.keep nodes/.keep; do
     placeholder_path="$TARGET_DIR/$placeholder"
+    if [ ! -f "$placeholder_path" ]; then
+        sudo -u nops touch "$placeholder_path"
+    fi
+done
+
+for placeholder in modules/.keep secrets/.keep scripts/.keep groups/.keep nodes/.keep; do
+    placeholder_path="$TARGET_DIR/$placeholder"
     placeholder_dir=$(dirname "$placeholder_path")
 
     if [ -f "$placeholder_path" ] && sudo -u nops find "$placeholder_dir" -mindepth 1 ! -name ".keep" -print -quit | grep -q .; then
@@ -793,7 +804,7 @@ if [ -n "$PRIVATE_IP" ] && [ -n "$PRIVATE_INTERFACE" ]; then
         };
 
         script = builtins.replaceStrings [ \"\\r\" ] [ \"\" ] ''
-            private_cidr=$(ip -o -f inet addr show dev ${PRIVATE_INTERFACE} | awk '{ print \$4 }' | head -n 1)
+            private_cidr=\$(ip -o -f inet addr show dev ${PRIVATE_INTERFACE} | awk '{ print $4 }' | head -n 1)
             [ -n \"\$private_cidr\" ] || exit 1
 
             ip route replace default via ${PRIVATE_GATEWAY} dev ${PRIVATE_INTERFACE} table 100
@@ -847,15 +858,15 @@ if [ ! -f "$SECRETS_FILE" ]; then
     log "Initializing global secrets file..."
     sudo -u nops mkdir -p "$(dirname "$SECRETS_FILE")"
     sudo -u nops cp --no-preserve=mode "$TEMPLATES_DIR/secrets.yaml" "$SECRETS_FILE"
-    sudo -u nops sed -i "s|git_username:.*|git_username: \"$GIT_USER\"|" "$SECRETS_FILE"
-    sudo -u nops sed -i "s|git_password:.*|git_password: \"$GIT_TOKEN\"|" "$SECRETS_FILE"
+    upsert_yaml_string_key "$SECRETS_FILE" "git_username" "$GIT_USER"
+    upsert_yaml_string_key "$SECRETS_FILE" "git_password" "$GIT_TOKEN"
 
     if [ "$NON_INTERACTIVE" = true ]; then
         log "Injecting secrets from config file..."
-        sudo -u nops sed -i "s|matrix_bot_token:.*|matrix_bot_token: \"$MATRIX_BOT_TOKEN\"|" "$SECRETS_FILE"
-        sudo -u nops sed -i "s|matrix_room_id:.*|matrix_room_id: \"$MATRIX_ROOM_ID\"|" "$SECRETS_FILE"
-        sudo -u nops sed -i "s|matrix_homeserver:.*|matrix_homeserver: \"$MATRIX_HOMESERVER\"|" "$SECRETS_FILE"
-        sudo -u nops sed -i "s|webhook_secret:.*|webhook_secret: \"$WEBHOOK_SECRET\"|" "$SECRETS_FILE"
+        upsert_yaml_string_key "$SECRETS_FILE" "matrix_bot_token" "$MATRIX_BOT_TOKEN"
+        upsert_yaml_string_key "$SECRETS_FILE" "matrix_room_id" "$MATRIX_ROOM_ID"
+        upsert_yaml_string_key "$SECRETS_FILE" "matrix_homeserver" "$MATRIX_HOMESERVER"
+        upsert_yaml_string_key "$SECRETS_FILE" "webhook_secret" "$WEBHOOK_SECRET"
     else
         log "Opening secrets/secrets.yaml for Matrix setup..."
         read -p "Press Enter to open editor (Ensure Matrix credentials are set)..."
