@@ -1,14 +1,14 @@
 {
-  "git_user": "myuser",
-  "git_token": "pat-XXXXXXX",
-  "repo_url": "https://git.example.com/myuser/fleet.git",
-  "node_group": "web",
-  "node_admin": "myadmin",
-  "node_admin_pass": "supersecret",
+  "git_user": "<git-user>",
+  "git_token": "<git-token>",
+  "repo_url": "https://git.example.com/org/fleet.git",
+  "node_group": "<node-group>",
+  "node_admin": "<admin-user>",
+  "node_admin_pass": "<admin-password>",
   "trigger_choice": "1",
-  "matrix_bot_token": "syt_XXXX",
+  "matrix_bot_token": "<matrix-bot-token>",
   "matrix_room_id": "!room:example.com",
   "matrix_homeserver": "matrix.example.com",
-  "webhook_secret": "mywebhooksecret",
-  "fleet_private_key": ""
+  "webhook_secret": "<webhook-secret>",
+  "fleet_private_key": "<age-private-key-or-empty>"
 }

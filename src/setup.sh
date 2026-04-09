@@ -691,7 +691,7 @@ fi
 # Substitutes installer-collected values into the node config: hostname, admin user, repo path, and trigger mode.
 log "Hydrating node configuration..."
 sudo -u nops sed -i "s|networking.hostName = \".*\";|networking.hostName = \"$HOSTNAME\";|" "$NODE_DIR/configuration.nix"
-sudo -u nops sed -i "s|users.users.tdavis|users.users.$NODE_ADMIN|" "$NODE_DIR/configuration.nix"
+sudo -u nops sed -i "s|users.users.admin|users.users.$NODE_ADMIN|" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|ADMIN_PASSWORD_HASH_SECRET_PLACEHOLDER|$ADMIN_PASSWORD_SECRET_NAME|g" "$NODE_DIR/configuration.nix"
 sudo -u nops sed -i "s|repoPath = \".*\";|repoPath = \"$TARGET_DIR\";|" "$NODE_DIR/configuration.nix"
 append_nix_block "$NODE_DIR/configuration.nix" "  networking.hostId = \"${HOST_ID}\";"

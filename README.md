@@ -52,22 +52,22 @@ Direct flag mode is also supported:
 
 ```bash
 sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
-  --hostname PBX-Asterisk-001 \
+  --hostname example-node-01 \
   --repo-url https://git.example.com/org/fleet.git \
-  --git-user myuser \
-  --git-token mytoken \
-  --node-group asterisk \
-  --admin techpro \
-  --admin-pass changeme \
+  --git-user git-user \
+  --git-token '<git-token>' \
+  --node-group app \
+  --admin adminuser \
+  --admin-pass '<admin-password>' \
   --ssh-key "ssh-ed25519 AAAA..." \
   --trigger webhook \
-  --fleet-private-key AGE-SECRET-KEY-PLACEHOLDER \
-  --webhook-secret mywebhooksecret \
-  --static-ip 172.16.4.44 \
+  --fleet-private-key '<age-private-key>' \
+  --webhook-secret '<webhook-secret>' \
+  --static-ip 192.0.2.10 \
   --static-interface eth0 \
   --static-prefix-length 24 \
-  --static-gateway 172.16.4.254 \
-  --static-dns 1.1.1.1 \
+  --static-gateway 192.0.2.1 \
+  --static-dns 1.1.1.1 9.9.9.9 \
   --node-role worker \
   --is-controller false
 ```
@@ -90,13 +90,13 @@ Typical post-install flow on a new node:
 
 ```bash
 sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
-  --hostname PBX-Asterisk-001 \
+  --hostname example-node-01 \
   --repo-url https://git.example.com/org/fleet.git \
-  --git-user myuser \
-  --git-token mytoken \
-  --node-group asterisk \
-  --admin techpro \
-  --admin-pass changeme
+  --git-user git-user \
+  --git-token '<git-token>' \
+  --node-group app \
+  --admin adminuser \
+  --admin-pass '<admin-password>'
 ```
 
 Example service configuration after enrollment:

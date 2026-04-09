@@ -36,7 +36,7 @@
   };
 
   # Primary admin user — username and hashedPasswordFile secret are substituted by the installer.
-  users.users.tdavis = {
+  users.users.admin = {
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
     hashedPasswordFile = config.sops.secrets."ADMIN_PASSWORD_HASH_SECRET_PLACEHOLDER".path;
