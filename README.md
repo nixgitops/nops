@@ -78,7 +78,7 @@ sudo nix run git+https://github.com/nixgitops/nops.git#install -- \
 
 If both `--config` and direct flags are provided, direct flags override the config file values.
 
-Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, single-interface static networking, and dual-homed public/private networking where the private interface can receive source-based policy routing through its own gateway.
+Direct-flag mode now supports the same common enrollment values typically carried in the JSON file, including admin SSH key injection, single-interface static networking, and dual-homed public/private networking where the private interface can receive source-based policy routing through its own gateway. When a private interface is provided, `nops` binds SSH to that private address by default.
 
 The installer hashes the value passed through `--admin-pass` or `node_admin_pass` and stores it in SOPS-backed Fleet secrets. Generated node configs use `users.users.<name>.hashedPasswordFile`, not `initialPassword`, so the admin password persists across rebuilds.
 
