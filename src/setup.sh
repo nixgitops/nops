@@ -839,11 +839,11 @@ if [ -n "$PRIVATE_IP" ] && [ -n "$PRIVATE_INTERFACE" ]; then
         };
 
         script = builtins.replaceStrings [ \"\\r\" ] [ \"\" ] ''
-            private_cidr=\$(ip -o -f inet addr show dev ${PRIVATE_INTERFACE} | awk '{ print $4 }' | head -n 1)
-            [ -n \"\$private_cidr\" ] || exit 1
+            private_network=\$(ip -4 route show dev ${PRIVATE_INTERFACE} proto kernel scope link | awk 'NR == 1 { print \$1 }')
+            [ -n \"\$private_network\" ] || exit 1
 
             ip route replace default via ${PRIVATE_GATEWAY} dev ${PRIVATE_INTERFACE} table 100
-            ip route replace \"\$private_cidr\" dev ${PRIVATE_INTERFACE} scope link table 100
+            ip route replace \"\$private_network\" dev ${PRIVATE_INTERFACE} scope link table 100
             ip rule del from ${PRIVATE_IP} table 100 2>/dev/null || true
             ip rule add from ${PRIVATE_IP} table 100 priority 100
         '';
