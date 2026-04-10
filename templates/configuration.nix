@@ -1,8 +1,8 @@
 { config, pkgs, ... }:
 
 {
-  imports = [ 
-    ./hardware-configuration.nix 
+  imports = [
+    ./hardware-configuration.nix
     ./imports.nix
   ];
 
@@ -12,23 +12,23 @@
     repoPath = "/home/nops/";
     matrix.enable = MATRIX_ENABLE_PLACEHOLDER;
     webhook.enable = WEBHOOK_ENABLE_PLACEHOLDER;
-    webhook.port = 8080;
-    
+    webhook.port = 8443;
+
     afterPush = [
       "/run/wrappers/bin/sudo /run/current-system/sw/bin/systemd-run --no-block --working-directory=${config.services.nops.repoPath} --service-type=oneshot --setenv=PATH=/run/current-system/sw/bin:/run/wrappers/bin -- /run/current-system/sw/bin/nixos-rebuild switch --flake ${config.services.nops.repoPath}#${config.networking.hostName} --impure"
     ];
   };
-  
+
   networking.hostName = "nops-node";
   time.timeZone = "UTC";
 
   # GRUB targeting /dev/sda — adjust device to match the hardware.
   boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/sda"; 
+  boot.loader.grub.device = "/dev/sda";
 
-  # Opens ports for SSH, node-exporter (9100), process-exporter (9256), and the nops webhook.
+  # Opens ports for SSH, node-exporter (9100), and process-exporter (9256). The nops module opens the configured webhook port.
   networking.networkmanager.enable = true;
-  networking.firewall.allowedTCPPorts = [ 22 9100 9256 8080 ];
+  networking.firewall.allowedTCPPorts = [ 22 9100 9256 ];
 
   services.openssh = {
     enable = true;
@@ -53,11 +53,11 @@
 
   # Enables flakes and nix-command; installs the tools needed for fleet operations.
   nix.settings.experimental-features = [ "flakes" "nix-command" ];
-  environment.systemPackages = with pkgs; [ 
-    git 
-    vim 
-    sops 
-    age 
+  environment.systemPackages = with pkgs; [
+    git
+    vim
+    sops
+    age
   ];
 
   # SOPS uses the age key at /var/lib/sops-nix/key.txt to decrypt fleet secrets at activation.

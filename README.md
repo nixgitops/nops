@@ -26,7 +26,7 @@ When a trigger is received, the nodes pull the repository, determine if their sp
 ## 📋 Prerequisites
 1. **A Git Host:** A private repository on Forgejo (or GitLab/GitHub).
 2. **Update Trigger:** * *For Matrix:* A Matrix homeserver, a dedicated room for updates, a Bot Access Token, and a Git hook configured to message the room.
-   * *For Webhooks:* The ability for your Git host to reach the node's IP/Domain on your configured port (default `8080`).
+  * *For Webhooks:* The ability for your Git host to reach the node's IP/Domain on your configured port (default `8443`). Webhook mode now defaults to HTTPS with an auto-generated self-signed certificate at `/home/nops/certs/server.crt` and `/home/nops/certs/server.key`.
 
 ---
 
@@ -117,7 +117,7 @@ services.nops = {
 
   # To use Webhook triggers
   webhook.enable = true;
-  webhook.port = 8080;
+  webhook.port = 8443;
 
   # Advanced: Designate this node as the Infrastructure Controller
   isController = true;
@@ -128,3 +128,20 @@ services.nops = {
   '';
 };
 ```
+
+If you want to keep the default webhook TLS behavior, you do not need to set certificate paths manually. `nops` will generate a self-signed certificate at `/home/nops/certs/server.crt` and `/home/nops/certs/server.key` on first start when webhook mode is enabled.
+
+If you need custom certificate paths, override `services.nops.webhook.sslCert` and `services.nops.webhook.sslKey`. If you intentionally want HTTP-only webhook mode, set both options to `null` and choose the non-TLS port you want.
+
+## Migrating Existing Webhook Nodes
+
+If an existing fleet node was using the old default webhook behavior on port `8080`, update the node configuration, external firewall rules, and webhook URL to use `8443`.
+
+If an existing fleet node contains placeholder certificate paths, replace them with the default generated paths:
+
+```nix
+services.nops.webhook.sslCert = "/home/nops/certs/server.crt";
+services.nops.webhook.sslKey = "/home/nops/certs/server.key";
+```
+
+If a node already uses real operator-managed certificates, keep those overrides in place. `nops` will not overwrite existing certificate files.
