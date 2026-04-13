@@ -26,9 +26,9 @@
   boot.loader.grub.enable = true;
   boot.loader.grub.device = "/dev/sda";
 
-  # Opens ports for SSH, node-exporter (9001), process-exporter (9256), and the nops webhook.
+  # Opens ports for SSH, node-exporter (9100), process-exporter (9256), and the nops webhook.
   networking.networkmanager.enable = true;
-  networking.firewall.allowedTCPPorts = [ 22 9001 9256 8080 ];
+  networking.firewall.allowedTCPPorts = [ 22 9100 9256 8080 ];
 
   services.openssh = {
     enable = true;

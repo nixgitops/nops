@@ -4,6 +4,7 @@ set -e
 
 HOSTNAME=$(hostname)
 TEMPLATES_DIR="${NOPS_TEMPLATES_DIR:-../templates}"
+EXPECTED_NOPS_FLAKE_URL="git+https://github.com/nixgitops/nops.git"
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
@@ -118,6 +119,34 @@ format_dns_list() {
 
 escape_sed_replacement() {
     printf '%s' "$1" | sed -e 's/[&|\\]/\\&/g'
+}
+
+validate_fleet_nops_input() {
+    local flake_file="$1"
+    local match_count=""
+    local nops_url=""
+
+    if [ ! -f "$flake_file" ]; then
+        echo "Error: expected fleet flake at $flake_file" >&2
+        exit 1
+    fi
+
+    match_count=$(awk '/^[[:space:]]*nops[.]url[[:space:]]*=/ { count++ } END { print count + 0 }' "$flake_file")
+    if [ "$match_count" -ne 1 ]; then
+        echo "Error: fleet flake must define exactly one nops.url input in $flake_file" >&2
+        exit 1
+    fi
+
+    nops_url=$(awk -F'"' '/^[[:space:]]*nops[.]url[[:space:]]*=/ { print $2; exit }' "$flake_file")
+    if [ -z "$nops_url" ]; then
+        echo "Error: unable to read nops.url from $flake_file" >&2
+        exit 1
+    fi
+
+    if [ "$nops_url" != "$EXPECTED_NOPS_FLAKE_URL" ]; then
+        echo "Error: fleet flake must consume nops from $EXPECTED_NOPS_FLAKE_URL. Found '$nops_url'. Use flake.lock to pin or roll back versions; do not use a local path, vendored copy, submodule, or mirrored checkout of nops inside the fleet repo." >&2
+        exit 1
+    fi
 }
 
 hash_password() {
@@ -470,7 +499,7 @@ fi
 LOG_FILE="/home/nops/log/main.log"
 
 # Writes a timestamped INFO entry to both stdout and the log file.
-log() { 
+log() {
     echo -e "${BLUE}[nops-setup]${NC} $1"
     sudo mkdir -p "$(dirname "$LOG_FILE")"
     echo "$(date '+%Y-%m-%d %H:%M:%S') [nops-setup] [INFO] $1" | sudo tee -a "$LOG_FILE" > /dev/null
@@ -521,7 +550,7 @@ if [ "$NON_INTERACTIVE" = true ]; then
     NODE_ADMIN_PASS=$(jq -r '.node_admin_pass // empty' "$CONFIG_FILE")
     TRIGGER_CHOICE=$(normalize_trigger_choice "$(jq -r '.trigger_choice // "1"' "$CONFIG_FILE")")
     FLEET_PRIVATE_KEY=$(jq -r '.fleet_private_key // empty' "$CONFIG_FILE")
-    
+
     MATRIX_BOT_TOKEN=$(jq -r '.matrix_bot_token // ""' "$CONFIG_FILE")
     MATRIX_ROOM_ID=$(jq -r '.matrix_room_id // ""' "$CONFIG_FILE")
     MATRIX_HOMESERVER=$(jq -r '.matrix_homeserver // ""' "$CONFIG_FILE")
@@ -721,6 +750,9 @@ if [ ! -f "flake.nix" ]; then
     sudo -u nops chmod u+w "$TARGET_DIR/flake.nix"
 fi
 
+log "Validating fleet flake input for nops..."
+validate_fleet_nops_input "$TARGET_DIR/flake.nix"
+
 # Creates the group and node config directories from templates if they don't already exist.
 GROUP_DIR="$TARGET_DIR/groups/$NODE_GROUP"
 if [ ! -d "$GROUP_DIR" ]; then
@@ -807,11 +839,11 @@ if [ -n "$PRIVATE_IP" ] && [ -n "$PRIVATE_INTERFACE" ]; then
         };
 
         script = builtins.replaceStrings [ \"\\r\" ] [ \"\" ] ''
-            private_cidr=\$(ip -o -f inet addr show dev ${PRIVATE_INTERFACE} | awk '{ print $4 }' | head -n 1)
-            [ -n \"\$private_cidr\" ] || exit 1
+            private_network=\$(ip -4 route show dev ${PRIVATE_INTERFACE} proto kernel scope link | awk 'NR == 1 { print \$1 }')
+            [ -n \"\$private_network\" ] || exit 1
 
             ip route replace default via ${PRIVATE_GATEWAY} dev ${PRIVATE_INTERFACE} table 100
-            ip route replace \"\$private_cidr\" dev ${PRIVATE_INTERFACE} scope link table 100
+            ip route replace \"\$private_network\" dev ${PRIVATE_INTERFACE} scope link table 100
             ip rule del from ${PRIVATE_IP} table 100 2>/dev/null || true
             ip rule add from ${PRIVATE_IP} table 100 priority 100
         '';
