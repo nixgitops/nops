@@ -819,7 +819,7 @@ if [ -n "$PRIVATE_IP" ] && [ -n "$PRIVATE_INTERFACE" ]; then
         useDHCP = false;
         ipv4.addresses = [{ address = \"${PRIVATE_IP}\"; prefixLength = ${PRIVATE_PREFIX_LENGTH}; }];
     };"
-                                append_nix_block "$NODE_DIR/configuration.nix" "  services.openssh.listenAddresses = [
+				append_nix_block "$NODE_DIR/configuration.nix" "  services.openssh.listenAddresses = [
         { addr = \"${PRIVATE_IP}\"; port = 22; }
     ];"
 
