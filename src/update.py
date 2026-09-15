@@ -91,7 +91,8 @@ class UpdateManager:
             chunks.append(text.replace("\\", "/"))
 
             base_dir = os.path.dirname(rel_path)
-            for match in re.findall(r'(?:"|\')((?:\.\.?/)+[^"\'\s\]]+)', text):
+            for match in re.findall(r'(?:"|\')((?:\.\.?/)+[^"\'\s\]]+)|(?<![A-Za-z0-9_./-])((?:\.\.?/)+[A-Za-z0-9_./-]+\.nix)', text):
+                match = match[0] or match[1]
                 imported = os.path.normpath(os.path.join(base_dir, match)).replace("\\", "/")
                 if imported not in seen:
                     pending.append(imported)
