@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 import logging
 import json
@@ -59,25 +60,73 @@ class UpdateManager:
         except Exception:
             return []
 
-    # Returns True if any changed path falls under this node's directory, shared groups/, modules/, secrets/, or flake files.
-    def _should_rebuild(self, changed_files: List[str]) -> bool:
+    def _read_repo_file(self, repo_dir: str, path: str) -> str:
+        try:
+            full_path = os.path.abspath(os.path.join(repo_dir, path))
+            repo_root = os.path.abspath(repo_dir)
+            if not full_path.startswith(repo_root + os.sep):
+                return ""
+            with open(full_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            return ""
+
+    def _node_config_text(self, repo_dir: str) -> str:
+        pending = [
+            f"nodes/{self.hostname}/configuration.nix",
+            f"nodes/{self.hostname}/imports.nix",
+        ]
+        seen = set()
+        chunks = []
+
+        while pending and len(seen) < 80:
+            rel_path = os.path.normpath(pending.pop()).replace("\\", "/")
+            if rel_path in seen:
+                continue
+            seen.add(rel_path)
+
+            text = self._read_repo_file(repo_dir, rel_path)
+            if not text:
+                continue
+            chunks.append(text.replace("\\", "/"))
+
+            base_dir = os.path.dirname(rel_path)
+            for match in re.findall(r'(?:"|\')((?:\.\.?/)+[^"\'\s\]]+)', text):
+                imported = os.path.normpath(os.path.join(base_dir, match)).replace("\\", "/")
+                if imported not in seen:
+                    pending.append(imported)
+
+        return "\n".join(chunks)
+
+    # Returns True if a changed path is globally relevant, node-local, or belongs to an app/module imported by this node.
+    def _should_rebuild(self, changed_files: List[str], repo_dir: str) -> bool:
         if not changed_files:
             return False
 
-        relevant_paths = [
+        global_paths = [
             f"nodes/{self.hostname}/",
             "groups/",    
-            "modules/",   
             "secrets/",
             "scripts/",
             "flake.nix",
             "flake.lock"
         ]
+
+        node_text = ""
         
         for f in changed_files:
-            if any(f.startswith(path) for path in relevant_paths):
+            if any(f.startswith(path) for path in global_paths):
                 logger.info(f"RELEVANT CHANGE DETECTED: {f}")
                 return True
+
+            parts = f.split("/")
+            if len(parts) >= 2 and parts[0] in ("apps", "modules"):
+                if not node_text:
+                    node_text = self._node_config_text(repo_dir)
+                reference = f"{parts[0]}/{parts[1]}/"
+                if reference in node_text:
+                    logger.info(f"RELEVANT {parts[0].upper()} CHANGE DETECTED FOR THIS NODE: {f}")
+                    return True
         
         return False
 
@@ -94,7 +143,7 @@ class UpdateManager:
         try:
             self._run_command(["git", "fetch", "origin"], cwd=repo_dir, stage="GIT-FETCH")
             changed_files = self._get_changed_files(repo_dir)
-            needs_rebuild = self._should_rebuild(changed_files)
+            needs_rebuild = self._should_rebuild(changed_files, repo_dir)
 
             if is_controller and controller_script:
                 logger.info("NODE IS CONTROLLER. SYNCING REPO BEFORE CONTROLLER SCRIPT...")
@@ -122,7 +171,7 @@ class UpdateManager:
                 
                 self._run_command(["git", "fetch", "origin"], cwd=repo_dir, stage="GIT-FETCH-POST")
                 changed_files = self._get_changed_files(repo_dir)
-                needs_rebuild = self._should_rebuild(changed_files)
+                needs_rebuild = self._should_rebuild(changed_files, repo_dir)
 
             if not needs_rebuild:
                 self._run_command(["git", "reset", "--hard", "origin/main"], cwd=repo_dir, stage="GIT-RESET")
