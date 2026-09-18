@@ -112,6 +112,11 @@
         commands = {
           update = cfg.afterPush;
         };
+        webhook = {
+          branch = cfg.webhook.branch;
+          trigger_on_push = cfg.webhook.triggerOnPush;
+          trigger_on_merge_request_merge = cfg.webhook.triggerOnMergeRequestMerge;
+        };
       });
     in {
       imports = [ sops-nix.nixosModules.sops ];
@@ -177,6 +182,21 @@
             type = lib.types.int;
             default = 8443;
             description = "Port for the Webhook listener to bind to. Defaults to HTTPS on 8443.";
+          };
+          branch = lib.mkOption {
+            type = lib.types.str;
+            default = "main";
+            description = "Branch name watched by the webhook listener.";
+          };
+          triggerOnPush = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = "Trigger updates from push events on the watched branch.";
+          };
+          triggerOnMergeRequestMerge = lib.mkOption {
+            type = lib.types.bool;
+            default = false;
+            description = "Trigger updates from GitLab merge request merge events into the watched branch.";
           };
           sslCert = lib.mkOption {
             type = lib.types.nullOr lib.types.str;
